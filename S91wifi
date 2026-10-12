@@ -1,0 +1,11 @@
+#!/bin/sh
+
+insmod /rtl8188eus/8188eu.ko
+ifconfig eth0 down
+ifconfig wlan0 up
+ifconfig wlan0 192.168.1.40
+wpa_supplicant -Dwext -iwlan0 -c/etc/wpa_supplicant.conf -B
+route add default gw 192.168.1.1 dev wlan0
+
+ntpd -p pool.ntp.org -p time.nist.gov
+

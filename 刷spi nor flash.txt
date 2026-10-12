@@ -1,0 +1,19 @@
+=========uboot==========
+mw.b 0x82000000 ff 0x100000​
+tftp 0x82000000 u-boot-hi3516dv300.bin​
+sf probe 0        ​
+sf erase 0x0 0x100000​
+sf write 0x82000000 0x0 0x100000
+=========kernel==========
+mw.b 0x82000000 ff 0x400000
+tftp 0x82000000 uImage_hi3516dv300_smp_wifi
+sf probe 0
+sf erase 0x100000 0x400000
+sf write 0x82000000 0x100000 0x400000
+
+=========rootfs==========
+mw.b 0x82000000 ff 0x01b00000
+tftp 0x82000000 rootfs_hi3516dv300_64k.jffs2
+sf probe 0
+sf erase 0x500000 0x01b00000
+sf write 0x82000000 0x500000 0x01b00000
