@@ -86,13 +86,6 @@ int exitok = 0;
 
 int udpfd;
 
-int count=0;
-
-
-struct list_head RTPbuf_head = LIST_HEAD_INIT(RTPbuf_head);
-
-static pthread_t gs_RtpPid;
-
 static char const* dateHeader()
 {
 	static char buf[200];
@@ -872,84 +865,17 @@ HI_S32 VENC_Sent(char *buffer,int buflen)
 
 HI_S32 SAMPLE_COMM_VENC_Sentjin(VENC_STREAM_S *pstStream)
 {
-    HI_S32 i,flag=0;
-
-    for(i=0;i<MAX_RTSP_CLIENT;i++)//have atleast a connect
-    {
-		if(g_rtspClients[i].status == RTSP_SENDING)
-		{
-		    flag = 1;
-		    break;
-		}
-    }
-    if(flag)
-    {
-	    for (i = 0; i < pstStream->u32PackCount; i++)
-	    {
-		HI_S32 lens=0,j,lastadd=0,newadd=0,showflap=0;
-		char sendbuf[320*1024];
-		//char tmp[640*1024];
-		lens = pstStream->pstPack[i].u32Len-pstStream->pstPack[i].u32Offset;
-		memcpy(&sendbuf[0],pstStream->pstPack[i].pu8Addr+pstStream->pstPack[i].u32Offset,lens);
-		//printf("lens = %d, count= %d\n",lens,count++);
-		VENC_Sent(sendbuf,lens);		
-		lens = 0;
-	    }
-
-	
-    }
-    return HI_SUCCESS;
+    return saveStream(pstStream);
 }
-
-HI_S32 saveStream(VENC_STREAM_S *pstStream)
-{
-    HI_S32 i,j,lens=0;
-
-    for(j=0;j<MAX_RTSP_CLIENT;j++)//have atleast a connect
-    {
-		if(g_rtspClients[j].status == RTSP_SENDING)
-		{
-		    for (i = 0; i < pstStream->u32PackCount; i++)
-		    {
-				RTPbuf_s *p = (RTPbuf_s *)malloc(sizeof(RTPbuf_s));
-                if (p == NULL) {
-                    fprintf(stderr, "Memory allocation failed for RTPbuf_s.\n");
-                    return HI_FAILURE;
-                }
-				INIT_LIST_HEAD(&(p->list));
-
-				lens = pstStream->pstPack[i].u32Len-pstStream->pstPack[i].u32Offset;
-                if (lens <= 0) {
-                    fprintf(stderr, "Invalid length for RTP packet.\n");
-                    free(p);
-                    return HI_FAILURE;
-                }
-
-				p->buf = (char *)malloc(lens);
-                if (p->buf == NULL) {
-                    fprintf(stderr, "Memory allocation failed for p->buf.\n");
-                    free(p);//释放上面申请的p
-                    return HI_FAILURE;
-                }
-
-				p->len = lens;
-				memcpy(p->buf,pstStream->pstPack[i].pu8Addr+pstStream->pstPack[i].u32Offset,lens);
-
-				list_add_tail(&(p->list),&RTPbuf_head);
-				count++;
-				//printf("count = %d\n",count);
-		    }
-    	}
-    }
-
-    return HI_SUCCESS;
-}
-
 
 void RtspServer_init(void)
 {
-	int i;
 	pthread_t threadId = 0;
+
+    if (RtspQueue_Start() != HI_SUCCESS) {
+        fprintf(stderr, "Failed to start RTSP frame sender.\n");
+        return;
+    }
 
 	memset(&g_rtp_playload,0,sizeof(g_rtp_playload));
 	strcpy(&g_rtp_playload,"G726-32");
@@ -968,35 +894,14 @@ void RtspServer_init(void)
 	//pthread_setschedparam(threadId,SCHED_RR,&thdsched);
 	printf("RTSP:-----Init Rtsp server\n");
 
-	pthread_create(&gs_RtpPid, 0, vdRTPSendThread, NULL);
+
 	
 	//exitok++;
 
 }
 void RtspServer_exit(void)
 {
-	return;
-}
-
-HI_VOID* vdRTPSendThread(HI_VOID *p)
-{
-	while(1)
-	{
-		if(!list_empty(&RTPbuf_head))
-		{
-			
-			RTPbuf_s *p = get_first_item(&RTPbuf_head,RTPbuf_s,list);
-			VENC_Sent(p->buf,p->len);
-			list_del(&(p->list));
-			free(p->buf);
-			free(p);
-			p = NULL;
-			count--;
-			//printf("count = %d\n",count);
-		
-		}
-		usleep(5000);
-	}
+    RtspQueue_Stop();
 }
 
 #endif
@@ -3058,6 +2963,8 @@ EXIT_VI_STOP:
             SAMPLE_VENC_Usage(argv[0]);
             return HI_FAILURE;
     }
+
+    RtspServer_exit();
 
     if (HI_SUCCESS == s32Ret)
     { printf("program exit normally!\n"); }

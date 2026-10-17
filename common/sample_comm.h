@@ -49,6 +49,7 @@
 #if	RTSP_ENABLE
 
 #include "list.h"
+#include "rtsp_queue.h"
 #if !defined(WIN32)
 	#define __PACKED__        __attribute__ ((__packed__))
 #else
@@ -134,7 +135,7 @@ extern void RtspServer_exit(void);
 
 int AddFrameToRtspBuf(int nChanNum,enRTSP_MonBlockType eType, char * pData, unsigned int  nSize, unsigned int  nVidFrmNum,int bIFrm);
 
-extern HI_VOID* vdRTPSendThread(HI_VOID *p);
+
 
 
 #define nalu_sent_len        1400
@@ -282,13 +283,7 @@ typedef struct
 } NALU_t;
 extern int udpfd;
 extern RTSP_CLIENT g_rtspClients[MAX_RTSP_CLIENT];
-typedef struct _rtpbuf
-{
-	struct list_head list;
-	HI_S32 len;
-	char * buf;
-}RTPbuf_s;
-extern struct list_head RTPbuf_head;
+
 
 #endif
 

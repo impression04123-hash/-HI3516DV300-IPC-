@@ -2188,6 +2188,10 @@ HI_VOID* SAMPLE_COMM_VENC_GetVencStreamProc(HI_VOID* p)
     VENC_CHN_STATUS_S stStat;
     VENC_STREAM_S stStream;
     HI_S32 s32Ret;
+    HI_S32 s32SaveRet;
+#if RTSP_ENABLE
+    HI_BOOL abRtspByFrame[VENC_MAX_CHN_NUM] = {HI_FALSE};
+#endif
     VENC_CHN VencChn;
     PAYLOAD_TYPE_E enPayLoadType[VENC_MAX_CHN_NUM];
     VENC_STREAM_BUF_INFO_S stStreamBufInfo[VENC_MAX_CHN_NUM];
@@ -2219,6 +2223,9 @@ HI_VOID* SAMPLE_COMM_VENC_GetVencStreamProc(HI_VOID* p)
             return NULL;
         }
         enPayLoadType[i] = stVencChnAttr.stVencAttr.enType;
+#if RTSP_ENABLE
+        abRtspByFrame[i] = stVencChnAttr.stVencAttr.bByFrame;
+#endif
 
         s32Ret = SAMPLE_COMM_VENC_GetFilePostfix(enPayLoadType[i], szFilePostfix);
         if (s32Ret != HI_SUCCESS)
@@ -2349,13 +2356,23 @@ HI_VOID* SAMPLE_COMM_VENC_GetVencStreamProc(HI_VOID* p)
                         if (!pFile[i])
                         {
                             SAMPLE_PRT("open file err!\n");
-                            return NULL;
+                            HI_MPI_VENC_ReleaseStream(i, &stStream);
+                            free(stStream.pstPack);
+                            stStream.pstPack = NULL;
+                            goto CLOSE_STREAM_FILES;
                         }
                     }
 
 #ifndef __HuaweiLite__
 #if RTSP_ENABLE
-                    saveStream(&stStream);
+                    /* Copy the complete H.264 frame before MP4 changes its bytes.
+                     * A queue drop must not bypass ReleaseStream below. */
+                    s32Ret = HI_SUCCESS;
+                    if (PT_H264 == enPayLoadType[i] && abRtspByFrame[i])
+                    {
+                        if (HI_SUCCESS != saveStream(&stStream))
+                            SAMPLE_PRT("RTSP frame dropped (invalid frame, allocation or stopped queue).\n");
+                    }
 #if MP4_ENABLE
                     SAMPLE_COMM_VENC_MP4(&stStream);
 #endif
@@ -2365,13 +2382,7 @@ HI_VOID* SAMPLE_COMM_VENC_GetVencStreamProc(HI_VOID* p)
 #else
                     s32Ret = SAMPLE_COMM_VENC_SaveStream_PhyAddr(pFile[i], &stStreamBufInfo[i], &stStream);
 #endif
-                    if (HI_SUCCESS != s32Ret)
-                    {
-                        free(stStream.pstPack);
-                        stStream.pstPack = NULL;
-                        SAMPLE_PRT("save stream failed!\n");
-                        break;
-                    }
+                    s32SaveRet = s32Ret;
                     /*******************************************************
                      step 2.6 : release stream
                      *******************************************************/
@@ -2389,6 +2400,12 @@ HI_VOID* SAMPLE_COMM_VENC_GetVencStreamProc(HI_VOID* p)
                     *******************************************************/
                     free(stStream.pstPack);
                     stStream.pstPack = NULL;
+                    if (HI_SUCCESS != s32SaveRet)
+                    {
+                        SAMPLE_PRT("save stream failed!\n");
+                        if (PT_JPEG == enPayLoadType[i]) fclose(pFile[i]);
+                        break;
+                    }
                     u32PictureCnt[i]++;
                     if(PT_JPEG == enPayLoadType[i])
                     {
@@ -2401,6 +2418,7 @@ HI_VOID* SAMPLE_COMM_VENC_GetVencStreamProc(HI_VOID* p)
     /*******************************************************
     * step 3 : close save-file
     *******************************************************/
+CLOSE_STREAM_FILES:
     for (i = 1; i < s32ChnTotal; i++)
     {
         if(PT_JPEG != enPayLoadType[i])
