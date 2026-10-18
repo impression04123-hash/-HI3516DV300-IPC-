@@ -16,8 +16,8 @@ The controlled sink replaces only `VENC_Sent`, the external network operation.
 Linker wrappers inject allocation/thread creation failures and track allocations.
 The tests exercise the production queue: pack offsets and independent buffers,
 deep copy before MP4 mutation/SDK release, invalid/partial frames, overflow,
-five pending frames, oldest whole-frame eviction, in-flight ownership, all three
-allocation failures, stop/restart, failed sends, and concurrent producers/sender.
+five pending frames, oldest whole-frame eviction, in-flight ownership, all six
+allocations for a three-pack frame, stop/restart, failed sends, and concurrent producers/sender.
 
 ## Queue contract and integration
 
@@ -28,6 +28,10 @@ allocation failures, stop/restart, failed sends, and concurrent producers/sender
 - Only H.264 channels configured with `bByFrame` enter this queue. Each pack's
   valid bytes are `[pu8Addr + u32Offset, pu8Addr + u32Len)`. All packs before the
   last must have `bFrameEnd == HI_FALSE`, and the last must have `HI_TRUE`.
+- Each `RTPbuf_s` list node deep-copies **one** SDK pack using `malloc` and
+  `memcpy`; `is_last_pack` marks the last pack in that frame. All packs for one
+  frame are published together under the queue mutex. Eviction and dequeue
+  detach all packs through the marked frame end, keeping a single shared list.
 - A frame can contain several packs, and a pack can contain several NALs.
   The queue retains all original pack boundaries and bytes, including Annex B
   start codes. The sender invokes the existing `VENC_Sent` once per original pack.
@@ -62,12 +66,11 @@ libraries. Rebuild the firmware program in that environment before deployment.
 The previously committed `sample_venc` executable and `.o` files are not rebuilt
 by these host tests and do not contain this source change.
 
-Validation on 2026-10-17 with the development board's SDK V2.0.2.0 headers:
-all seven test groups passed normally, under AddressSanitizer/UBSan and under
-ThreadSanitizer (16,000 concurrent stress frames per complete suite). The three
-changed C translation units passed host GCC syntax checks using the repository's
-MP4 headers in a temporary copy of the required include layout; no new warning
-messages were introduced compared with the original source. GCC `-fanalyzer`
-still warns about repeated frees across successive kernel-list pop iterations;
-manual ownership review and runtime sanitizers found no corresponding double
-free. This is not reported as a clean static analysis result.
+Validation on 2026-10-18 with the development board SDK V2.0.2.0 headers:
+all seven queue test groups passed using WSL GCC normally and under
+AddressSanitizer/UBSan. Each three-pack frame now uses six separately tracked
+allocations (three list nodes and three payload buffers); forced failures at
+all six allocation sites were tested. This run has not repeated ThreadSanitizer,
+full firmware cross-compilation or hardware playback tests. The existing
+`VENC_Sent` RTP packetization, timestamps and client session synchronization
+still need separate review.

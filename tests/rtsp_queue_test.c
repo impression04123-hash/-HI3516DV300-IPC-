@@ -243,7 +243,8 @@ static void test_invalid_frame_and_allocation_failures(void)
         assert(saveStream(&f.stream) == HI_FAILURE);
         wait_allocations(0);
     }
-    for (i = 1; i <= 3; ++i) {
+    /* One allocation for each pack node and its payload: three packs = six. */
+    for (i = 1; i <= 6; ++i) {
         frame(&f, 50, 3);
         pthread_mutex_lock(&allocation_lock);
         fail_allocation = i;
@@ -278,7 +279,7 @@ static void test_shutdown_with_pending_and_inflight_frames(void)
         assert(saveStream(&f.stream) == HI_SUCCESS);
     }
     assert(pthread_create(&thread, NULL, stopper, NULL) == 0);
-    wait_allocations(3); /* Pending frames gone; in-flight frame still owned. */
+    wait_allocations(6); /* Three in-flight pack nodes + three payloads. */
     assert(saveStream(&f.stream) == HI_FAILURE);
     release_sink();
     assert(pthread_join(thread, NULL) == 0);
